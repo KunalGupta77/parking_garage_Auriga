@@ -11,6 +11,7 @@ from fees import ADDITIONAL_HOUR_RATE, DAILY_CAP, FIRST_HOUR_RATE, calculate_fee
 from models import ParkingSession, ParkingSpot, User, VEHICLE_TYPES, db, utcnow
 from rates import load_rate_card
 from seed import init_db
+from validators import is_valid_plate, normalize_plate, password_strength_error
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -130,6 +131,10 @@ def register_routes(app):
         if not name or not email or not password:
             return jsonify({"error": "name, email and password are required"}), 400
 
+        pw_error = password_strength_error(password)
+        if pw_error:
+            return jsonify({"error": pw_error}), 400
+
         if User.query.filter_by(email=email).first():
             return jsonify({"error": "Email already registered"}), 409
 
@@ -171,13 +176,15 @@ def register_routes(app):
     @login_required
     def check_in():
         data = request.get_json(silent=True) or {}
-        plate_number = (data.get("plate_number") or "").strip().upper()
+        plate_number = normalize_plate(data.get("plate_number"))
         vehicle_type = (data.get("vehicle_type") or "").strip().lower()
 
         if not plate_number or not vehicle_type:
             return jsonify({"error": "plate_number and vehicle_type are required"}), 400
         if vehicle_type not in VEHICLE_TYPES:
             return jsonify({"error": f"vehicle_type must be one of {list(VEHICLE_TYPES)}"}), 400
+        if not is_valid_plate(plate_number):
+            return jsonify({"error": "plate_number must be a valid Indian format, e.g. KA01AB1234"}), 400
 
         existing = ParkingSession.query.filter_by(plate_number=plate_number, status="active").first()
         if existing:
@@ -202,7 +209,7 @@ def register_routes(app):
     @login_required
     def check_out():
         data = request.get_json(silent=True) or {}
-        plate_number = (data.get("plate_number") or "").strip().upper()
+        plate_number = normalize_plate(data.get("plate_number"))
 
         if not plate_number:
             return jsonify({"error": "plate_number is required"}), 400
@@ -272,7 +279,7 @@ def register_routes(app):
     @app.get("/api/parking/<plate>")
     @login_required
     def parking_by_plate(plate):
-        plate_number = plate.strip().upper()
+        plate_number = normalize_plate(plate)
         sessions = (
             ParkingSession.query.filter_by(plate_number=plate_number)
             .order_by(ParkingSession.check_in.desc())
@@ -389,13 +396,15 @@ def register_routes(app):
         out and opening a new one, since it's the same continuous stay.
         """
         data = request.get_json(silent=True) or {}
-        old_plate = (data.get("old_plate") or "").strip().upper()
-        new_plate = (data.get("new_plate") or "").strip().upper()
+        old_plate = normalize_plate(data.get("old_plate"))
+        new_plate = normalize_plate(data.get("new_plate"))
 
         if not old_plate or not new_plate:
             return jsonify({"error": "old_plate and new_plate are required"}), 400
         if old_plate == new_plate:
             return jsonify({"error": "new_plate must differ from old_plate"}), 400
+        if not is_valid_plate(new_plate):
+            return jsonify({"error": "new_plate must be a valid Indian format, e.g. KA01AB1234"}), 400
 
         active_session = ParkingSession.query.filter_by(plate_number=old_plate, status="active").first()
         if active_session is None:
@@ -415,4 +424,4 @@ init_db(app)
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=int(os.environ.get("PORT", 5000)))

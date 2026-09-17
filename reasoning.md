@@ -1,6 +1,4 @@
 # REASONING.md
- 
-# CLAUDE
 
 ## How I read the problem
 
@@ -223,10 +221,38 @@ flat ₹50 default), a 25-hour-old session got auto-closed by `/clock` at the st
 rate's ₹300 cap, and a transferred plate vanished from the old plate's lookup while
 the new plate showed the original spot and check-in time, exactly as expected.
 
+## Password strength and Indian plate format
+
+Added later, once it was pointed out that registration had basically no password
+policy and check-in accepted literally anything as a "plate." Both live in
+`validators.py` as small, pure functions — same reasoning as `fees.py` and `rates.py`:
+easy to test in isolation, and easy to point at from more than one route.
+
+For passwords: at least 8 characters, one uppercase, one lowercase, one digit, one
+special character. Nothing exotic — this is the same bar most login forms hold you to
+— and `password_strength_error()` returns the *specific* rule that failed rather than
+a generic "weak password" message, since telling someone exactly what's missing beats
+making them guess.
+
+For plates: I went with the standard Indian format — 2-letter state code, 1-2 digit
+RTO code, 1-3 letter series, 4-digit number (`KA01AB1234`, `MH12CD5678`). One
+deliberate scope cut: this doesn't recognize the newer BH-series plates
+(`22BH1234AB`), which follow a different shape entirely. Didn't seem worth the extra
+complexity for an assessment-scope garage system, but it's a real gap if this ever
+needed to handle those. I also added `normalize_plate()` so `"ka 01-ab 1234"` and
+`"KA01AB1234"` are recognized as the same input — people are going to type plates with
+spaces and hyphens, and rejecting that outright would just be annoying.
+
+This did mean going back through every existing test and swapping in passwords and
+plates that actually pass the new rules — the old test fixtures used things like
+`"pw123456"` and `"AB1"`, neither of which would fly anymore. Not a fun diff to write,
+but a necessary one: if the tests don't hold the app to its own new rules, they're not
+really testing anything.
+
 ## Where things stand
 
-- `python -m pytest tests/ -v` → 38/38 passing (27 from the core spec, 11 from the
-  twists).
+- `python -m pytest tests/ -v` → 49/49 passing (27 from the core spec, 11 from the
+  twists, 11 from password/plate validation).
 - Full manual browser walkthrough: landing page → register → login → dashboard stats
   load correctly (30 spots, 6 EV, for the seeded garage) → check in a compact and an
   EV → each gets the right spot → search by plate shows the active session and a

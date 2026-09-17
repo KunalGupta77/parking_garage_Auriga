@@ -45,12 +45,13 @@ parking-management/
 ├── app.py                  # Flask app, routes, page + API endpoints
 ├── models.py                # SQLAlchemy models: User, ParkingSpot, ParkingSession
 ├── fees.py                  # calculate_fee() — pure function, independently testable
+├── validators.py             # password-strength and Indian plate-format validation
 ├── rates.py                  # messy rate-card cleaning/import (see "Twists" below)
 ├── rate_card_raw.csv         # sample messy per-spot-type rate card
 ├── seed.py                  # DB init + garage seed data (configurable layout)
 ├── requirements.txt
 ├── tests/
-│   └── test_app.py          # pytest suite (38 tests)
+│   └── test_app.py          # pytest suite (49 tests)
 ├── templates/
 │   ├── index.html            # Landing page
 │   ├── register.html
@@ -66,7 +67,8 @@ parking-management/
 
 ## Setup & Installation
 
-Requires Python 3.10+.
+Requires Python 3.10+. On macOS/Linux, use `python3` instead of `python` below if
+your system doesn't alias `python` to Python 3.
 
 ```bash
 cd parking-management
@@ -88,6 +90,15 @@ python app.py
 
 The app starts at **http://localhost:5000**. On first run it automatically creates
 `parking.db` (SQLite) and seeds it with a sample 3-floor garage (see `seed.py`).
+If port 5000 is already in use on your machine, run on a different port instead of
+editing any code:
+
+```bash
+# Windows (PowerShell)
+$env:PORT=5001; python app.py
+# macOS/Linux
+PORT=5001 python app.py
+```
 
 Open `http://localhost:5000` in a browser, register an attendant account, log in, and
 use the dashboard.
@@ -98,8 +109,8 @@ use the dashboard.
 python -m pytest tests/ -v
 ```
 
-38 tests cover fee calculation, auth, check-in/check-out rules, spot assignment,
-search, pagination, sorting, and the three twists below.
+49 tests cover fee calculation, auth, password/plate validation, check-in/check-out
+rules, spot assignment, search, pagination, sorting, and the three twists below.
 
 ## Database
 
@@ -141,6 +152,24 @@ seconds/minutes (ceiling division) — no floating point.
 
 See `REASONING.md` for the full explanation and edge cases.
 
+## Validation Rules
+
+**Passwords** must be at least 8 characters and contain an uppercase letter, a
+lowercase letter, a digit, and a special character. Checked server-side in
+`validators.py` (`password_strength_error`) on `/api/register`; a weak password gets
+`400 {"error": "Password must contain at least one uppercase letter"}` (or whichever
+rule failed first).
+
+**License plates** must match the standard Indian format — 2-letter state code,
+1-2 digit RTO code, 1-3 letter series, 4-digit number (e.g. `KA01AB1234`,
+`MH12CD5678`). Checked in `validators.py` (`is_valid_plate`) on check-in and on a
+transfer's `new_plate`. Input is normalized first (`normalize_plate`): upper-cased,
+spaces and hyphens stripped, so `"ka 01-ab 1234"` and `"KA01AB1234"` are treated as
+the same plate. An invalid format gets
+`400 {"error": "plate_number must be a valid Indian format, e.g. KA01AB1234"}`.
+This does not cover the newer BH-series format (`YYBHnnnnXX`) — a documented scope
+decision, see `REASONING.md`.
+
 ## API Endpoints
 
 All `/api/*` endpoints (except register/login) require an authenticated session
@@ -169,16 +198,18 @@ HTTP status code.
 **Register**
 ```
 POST /api/register
-{"name": "Jane Doe", "email": "jane@example.com", "password": "secret123"}
+{"name": "Jane Doe", "email": "jane@example.com", "password": "Secur3P@ss"}
 
 201 Created
 {"id": 1, "name": "Jane Doe", "email": "jane@example.com"}
 ```
+Weak password → `400 {"error": "Password must contain at least one special character"}`
+(see Validation Rules above)
 
 **Login**
 ```
 POST /api/login
-{"email": "jane@example.com", "password": "secret123"}
+{"email": "jane@example.com", "password": "Secur3P@ss"}
 
 200 OK
 {"id": 1, "name": "Jane Doe", "email": "jane@example.com"}
@@ -201,6 +232,7 @@ POST /api/parking/check-in
 - Vehicle already parked → `409 {"error": "Vehicle is already parked"}`
 - No compatible spot → `409 {"error": "No compatible parking spot available"}`
 - Invalid vehicle type → `400 {"error": "vehicle_type must be one of [...]"}`
+- Plate not in Indian format → `400 {"error": "plate_number must be a valid Indian format, e.g. KA01AB1234"}`
 
 **Check-out**
 ```
@@ -299,8 +331,9 @@ POST /api/parking/transfer
 
 ## Debugging
 
-- **App won't start / port in use**: another process is bound to port 5000 — either
-  stop it or run `app.run(port=5001)`.
+- **App won't start / port in use**: another process is bound to port 5000 — run with
+  `PORT=5001 python app.py` (or `$env:PORT=5001; python app.py` on Windows PowerShell)
+  instead of editing code.
 - **Stale data / weird state**: stop the server, delete `parking.db`, restart to reseed.
 - **401 on every request**: session cookie not being sent — the frontend fetch calls use
   `credentials: "include"`; if calling the API from a separate origin/tool, do the same.

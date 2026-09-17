@@ -10,6 +10,11 @@ from fees import ADDITIONAL_HOUR_RATE, DAILY_CAP, FIRST_HOUR_RATE, calculate_fee
 from models import ParkingSpot, db
 from rates import clean_rate_card, load_rate_card
 from seed import init_db
+from validators import is_valid_plate, normalize_plate, password_strength_error
+
+# A password meeting the strength policy (>=8 chars, upper, lower, digit, special),
+# reused everywhere a test just needs a valid account rather than testing the policy.
+STRONG_PW = "Secur3P@ss"
 
 
 @pytest.fixture
@@ -26,8 +31,8 @@ def client(app):
 
 
 def register_and_login(client, email="attendant@example.com"):
-    client.post("/api/register", json={"name": "Attendant", "email": email, "password": "secret123"})
-    client.post("/api/login", json={"email": email, "password": "secret123"})
+    client.post("/api/register", json={"name": "Attendant", "email": email, "password": STRONG_PW})
+    client.post("/api/login", json={"email": email, "password": STRONG_PW})
 
 
 # --------------------------------------------------------------- fee tests
@@ -74,42 +79,79 @@ def test_fee_daily_cap_applies():
     assert fee == DAILY_CAP
 
 
+# --------------------------------------------------------- password policy
+def test_password_strength_error_too_short():
+    assert password_strength_error("Ab1@ab") is not None
+
+
+def test_password_strength_error_missing_upper():
+    assert password_strength_error("secur3p@ss") is not None
+
+
+def test_password_strength_error_missing_special():
+    assert password_strength_error("Secur3pass") is not None
+
+
+def test_password_strength_error_accepts_strong_password():
+    assert password_strength_error(STRONG_PW) is None
+
+
+# -------------------------------------------------------------- plate format
+def test_is_valid_plate_accepts_standard_indian_format():
+    assert is_valid_plate("KA01AB1234")
+    assert is_valid_plate("MH12CD5678")
+
+
+def test_is_valid_plate_rejects_junk():
+    assert not is_valid_plate("AB1")
+    assert not is_valid_plate("12345")
+    assert not is_valid_plate("")
+
+
+def test_normalize_plate_strips_spaces_and_case():
+    assert normalize_plate("ka 01-ab 1234") == "KA01AB1234"
+
+
 # ----------------------------------------------------------------- auth
 def test_register_success(client):
-    resp = client.post(
-        "/api/register", json={"name": "A", "email": "a@x.com", "password": "pw123456"}
-    )
+    resp = client.post("/api/register", json={"name": "A", "email": "a@x.com", "password": STRONG_PW})
     assert resp.status_code == 201
     assert resp.get_json()["email"] == "a@x.com"
 
 
+def test_register_weak_password_rejected(client):
+    resp = client.post("/api/register", json={"name": "A", "email": "a@x.com", "password": "weak"})
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()
+
+
 def test_register_duplicate_email(client):
-    client.post("/api/register", json={"name": "A", "email": "a@x.com", "password": "pw123456"})
-    resp = client.post("/api/register", json={"name": "A2", "email": "a@x.com", "password": "pw123456"})
+    client.post("/api/register", json={"name": "A", "email": "a@x.com", "password": STRONG_PW})
+    resp = client.post("/api/register", json={"name": "A2", "email": "a@x.com", "password": STRONG_PW})
     assert resp.status_code == 409
 
 
 def test_login_success(client):
-    client.post("/api/register", json={"name": "A", "email": "a@x.com", "password": "pw123456"})
-    resp = client.post("/api/login", json={"email": "a@x.com", "password": "pw123456"})
+    client.post("/api/register", json={"name": "A", "email": "a@x.com", "password": STRONG_PW})
+    resp = client.post("/api/login", json={"email": "a@x.com", "password": STRONG_PW})
     assert resp.status_code == 200
 
 
 def test_login_invalid_password(client):
-    client.post("/api/register", json={"name": "A", "email": "a@x.com", "password": "pw123456"})
+    client.post("/api/register", json={"name": "A", "email": "a@x.com", "password": STRONG_PW})
     resp = client.post("/api/login", json={"email": "a@x.com", "password": "wrong"})
     assert resp.status_code == 401
 
 
 # ------------------------------------------------------------- check-in
 def test_checkin_requires_auth(client):
-    resp = client.post("/api/parking/check-in", json={"plate_number": "AB1", "vehicle_type": "compact"})
+    resp = client.post("/api/parking/check-in", json={"plate_number": "KA01AB1234", "vehicle_type": "compact"})
     assert resp.status_code == 401
 
 
 def test_checkin_compact_success(client):
     register_and_login(client)
-    resp = client.post("/api/parking/check-in", json={"plate_number": "AB1", "vehicle_type": "compact"})
+    resp = client.post("/api/parking/check-in", json={"plate_number": "KA01AB1234", "vehicle_type": "compact"})
     assert resp.status_code == 201
     body = resp.get_json()
     assert body["status"] == "active"
@@ -117,19 +159,33 @@ def test_checkin_compact_success(client):
 
 def test_checkin_standard_success(client):
     register_and_login(client)
-    resp = client.post("/api/parking/check-in", json={"plate_number": "AB2", "vehicle_type": "standard"})
+    resp = client.post("/api/parking/check-in", json={"plate_number": "KA01AB2345", "vehicle_type": "standard"})
     assert resp.status_code == 201
 
 
 def test_checkin_ev_success(client):
     register_and_login(client)
-    resp = client.post("/api/parking/check-in", json={"plate_number": "AB3", "vehicle_type": "ev"})
+    resp = client.post("/api/parking/check-in", json={"plate_number": "KA01AB3456", "vehicle_type": "ev"})
     assert resp.status_code == 201
+
+
+def test_checkin_invalid_plate_format_rejected(client):
+    register_and_login(client)
+    resp = client.post("/api/parking/check-in", json={"plate_number": "AB1", "vehicle_type": "compact"})
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()
+
+
+def test_checkin_normalizes_spaces_and_hyphens(client):
+    register_and_login(client)
+    resp = client.post("/api/parking/check-in", json={"plate_number": "ka 01-ab 9999", "vehicle_type": "compact"})
+    assert resp.status_code == 201
+    assert resp.get_json()["plate_number"] == "KA01AB9999"
 
 
 def test_ev_never_assigned_non_ev_spot(client, app):
     register_and_login(client)
-    resp = client.post("/api/parking/check-in", json={"plate_number": "EV1", "vehicle_type": "ev"})
+    resp = client.post("/api/parking/check-in", json={"plate_number": "KA01EV1111", "vehicle_type": "ev"})
     spot_id = resp.get_json()["spot_id"]
     with app.app_context():
         spot = db.session.get(ParkingSpot, spot_id)
@@ -138,15 +194,15 @@ def test_ev_never_assigned_non_ev_spot(client, app):
 
 def test_duplicate_active_checkin_rejected(client):
     register_and_login(client)
-    client.post("/api/parking/check-in", json={"plate_number": "AB4", "vehicle_type": "compact"})
-    resp = client.post("/api/parking/check-in", json={"plate_number": "ab4", "vehicle_type": "compact"})
+    client.post("/api/parking/check-in", json={"plate_number": "KA01AB4567", "vehicle_type": "compact"})
+    resp = client.post("/api/parking/check-in", json={"plate_number": "ka01ab4567", "vehicle_type": "compact"})
     assert resp.status_code == 409
 
 
 def test_spot_never_double_assigned(client):
     register_and_login(client)
-    r1 = client.post("/api/parking/check-in", json={"plate_number": "S1", "vehicle_type": "standard"})
-    r2 = client.post("/api/parking/check-in", json={"plate_number": "S2", "vehicle_type": "standard"})
+    r1 = client.post("/api/parking/check-in", json={"plate_number": "KA01ST0001", "vehicle_type": "standard"})
+    r2 = client.post("/api/parking/check-in", json={"plate_number": "KA01ST0002", "vehicle_type": "standard"})
     assert r1.get_json()["spot_id"] != r2.get_json()["spot_id"]
 
 
@@ -154,26 +210,28 @@ def test_no_compatible_spot_handled(client):
     register_and_login(client)
     # Fill all EV spots (6 total from seed config: 2 per floor x 3 floors).
     for i in range(6):
-        resp = client.post("/api/parking/check-in", json={"plate_number": f"EV{i}", "vehicle_type": "ev"})
+        resp = client.post(
+            "/api/parking/check-in", json={"plate_number": f"KA01EV{1000 + i}", "vehicle_type": "ev"}
+        )
         assert resp.status_code == 201
-    resp = client.post("/api/parking/check-in", json={"plate_number": "EVX", "vehicle_type": "ev"})
+    resp = client.post("/api/parking/check-in", json={"plate_number": "KA01EV1006", "vehicle_type": "ev"})
     assert resp.status_code == 409
     assert "error" in resp.get_json()
 
 
 def test_invalid_vehicle_type_rejected(client):
     register_and_login(client)
-    resp = client.post("/api/parking/check-in", json={"plate_number": "BAD1", "vehicle_type": "truck"})
+    resp = client.post("/api/parking/check-in", json={"plate_number": "KA01BD9999", "vehicle_type": "truck"})
     assert resp.status_code == 400
 
 
 # ------------------------------------------------------------- check-out
 def test_checkout_success_and_frees_spot(client, app):
     register_and_login(client)
-    checkin = client.post("/api/parking/check-in", json={"plate_number": "CO1", "vehicle_type": "compact"})
+    checkin = client.post("/api/parking/check-in", json={"plate_number": "KA01CO0001", "vehicle_type": "compact"})
     spot_id = checkin.get_json()["spot_id"]
 
-    resp = client.post("/api/parking/check-out", json={"plate_number": "co1"})
+    resp = client.post("/api/parking/check-out", json={"plate_number": "ka01co0001"})
     assert resp.status_code == 200
     body = resp.get_json()
     assert body["status"] == "completed"
@@ -193,10 +251,10 @@ def test_checkout_nonexistent_vehicle(client):
 # ---------------------------------------------------------------- search
 def test_plate_search(client):
     register_and_login(client)
-    client.post("/api/parking/check-in", json={"plate_number": "FIND1", "vehicle_type": "compact"})
-    resp = client.get("/api/parking/find1")
+    client.post("/api/parking/check-in", json={"plate_number": "KA01FD1234", "vehicle_type": "compact"})
+    resp = client.get("/api/parking/ka01fd1234")
     assert resp.status_code == 200
-    assert resp.get_json()["plate_number"] == "FIND1"
+    assert resp.get_json()["plate_number"] == "KA01FD1234"
 
 
 def test_plate_search_not_found(client):
@@ -210,7 +268,9 @@ def test_pagination(client):
     register_and_login(client)
     # Seed config provides 12 standard spots, so 12 check-ins all succeed.
     for i in range(12):
-        resp = client.post("/api/parking/check-in", json={"plate_number": f"PG{i}", "vehicle_type": "standard"})
+        resp = client.post(
+            "/api/parking/check-in", json={"plate_number": f"KA02PG{4000 + i}", "vehicle_type": "standard"}
+        )
         assert resp.status_code == 201
     resp = client.get("/api/parking?page=2&limit=10")
     body = resp.get_json()
@@ -222,8 +282,8 @@ def test_pagination(client):
 
 def test_sorting(client):
     register_and_login(client)
-    client.post("/api/parking/check-in", json={"plate_number": "ZZZ", "vehicle_type": "compact"})
-    client.post("/api/parking/check-in", json={"plate_number": "AAA", "vehicle_type": "standard"})
+    client.post("/api/parking/check-in", json={"plate_number": "ZZ09ZZ0009", "vehicle_type": "compact"})
+    client.post("/api/parking/check-in", json={"plate_number": "AA01AA0001", "vehicle_type": "standard"})
     resp = client.get("/api/parking?sort=plate_number&order=asc")
     plates = [row["plate_number"] for row in resp.get_json()["data"]]
     assert plates == sorted(plates)
@@ -277,9 +337,9 @@ def test_load_rate_card_from_file():
 
 def test_checkout_uses_per_spot_type_rate(client):
     register_and_login(client)
-    checkin = client.post("/api/parking/check-in", json={"plate_number": "EVRATE1", "vehicle_type": "ev"})
+    checkin = client.post("/api/parking/check-in", json={"plate_number": "KA01EV7890", "vehicle_type": "ev"})
     assert checkin.status_code == 201
-    resp = client.post("/api/parking/check-out", json={"plate_number": "EVRATE1"})
+    resp = client.post("/api/parking/check-out", json={"plate_number": "KA01EV7890"})
     body = resp.get_json()
     # EV's cleaned first-hour rate (100) differs from the flat default (50).
     assert body["fee"] == 100
@@ -296,7 +356,7 @@ def test_rates_endpoint(client):
 # --------------------------------------------------- T2: nightly auto-close
 def test_clock_auto_closes_stale_session(client):
     register_and_login(client)
-    checkin = client.post("/api/parking/check-in", json={"plate_number": "STALE1", "vehicle_type": "standard"})
+    checkin = client.post("/api/parking/check-in", json={"plate_number": "KA01ST5678", "vehicle_type": "standard"})
     spot_id = checkin.get_json()["spot_id"]
     check_in_iso = checkin.get_json()["check_in"]
 
@@ -309,7 +369,7 @@ def test_clock_auto_closes_stale_session(client):
     assert resp.status_code == 200
     body = resp.get_json()
     assert body["closed_count"] == 1
-    assert body["closed"][0]["plate_number"] == "STALE1"
+    assert body["closed"][0]["plate_number"] == "KA01ST5678"
     assert body["closed"][0]["status"] == "completed"
     # 25 hours parked exceeds the cleaned rate card's cap for "standard" (300).
     assert body["closed"][0]["fee"] == 300
@@ -321,7 +381,7 @@ def test_clock_auto_closes_stale_session(client):
 
 def test_clock_leaves_fresh_sessions_active(client):
     register_and_login(client)
-    client.post("/api/parking/check-in", json={"plate_number": "FRESH1", "vehicle_type": "standard"})
+    client.post("/api/parking/check-in", json={"plate_number": "KA01FR2345", "vehicle_type": "standard"})
     resp = client.post("/clock", json={})
     assert resp.status_code == 200
     assert resp.get_json()["closed_count"] == 0
@@ -337,43 +397,56 @@ def test_clock_requires_no_auth(client):
 # --------------------------------------------------- T6: valet transfer
 def test_transfer_moves_plate_keeps_spot_and_entry_time(client):
     register_and_login(client)
-    checkin = client.post("/api/parking/check-in", json={"plate_number": "OLD1", "vehicle_type": "compact"})
+    checkin = client.post("/api/parking/check-in", json={"plate_number": "KA01OL1111", "vehicle_type": "compact"})
     original = checkin.get_json()
 
-    resp = client.post("/api/parking/transfer", json={"old_plate": "OLD1", "new_plate": "NEW1"})
+    resp = client.post(
+        "/api/parking/transfer", json={"old_plate": "KA01OL1111", "new_plate": "KA01NW2222"}
+    )
     assert resp.status_code == 200
     body = resp.get_json()
-    assert body["plate_number"] == "NEW1"
+    assert body["plate_number"] == "KA01NW2222"
     assert body["spot_id"] == original["spot_id"]
     assert body["check_in"] == original["check_in"]
     assert body["status"] == "active"
 
     # Old plate no longer has an active session.
-    old_lookup = client.get("/api/parking/OLD1")
+    old_lookup = client.get("/api/parking/KA01OL1111")
     assert old_lookup.status_code == 404
 
-    new_lookup = client.get("/api/parking/NEW1")
+    new_lookup = client.get("/api/parking/KA01NW2222")
     assert new_lookup.status_code == 200
-    assert new_lookup.get_json()["active"]["plate_number"] == "NEW1"
+    assert new_lookup.get_json()["active"]["plate_number"] == "KA01NW2222"
 
 
 def test_transfer_nonexistent_old_plate(client):
     register_and_login(client)
-    resp = client.post("/api/parking/transfer", json={"old_plate": "NOPE", "new_plate": "NEW1"})
+    resp = client.post("/api/parking/transfer", json={"old_plate": "NOPE", "new_plate": "KA01NW2222"})
     assert resp.status_code == 404
 
 
 def test_transfer_conflicting_new_plate(client):
     register_and_login(client)
-    client.post("/api/parking/check-in", json={"plate_number": "OLD2", "vehicle_type": "compact"})
-    client.post("/api/parking/check-in", json={"plate_number": "TAKEN", "vehicle_type": "standard"})
+    client.post("/api/parking/check-in", json={"plate_number": "KA01OL3333", "vehicle_type": "compact"})
+    client.post("/api/parking/check-in", json={"plate_number": "KA01TK4444", "vehicle_type": "standard"})
 
-    resp = client.post("/api/parking/transfer", json={"old_plate": "OLD2", "new_plate": "TAKEN"})
+    resp = client.post(
+        "/api/parking/transfer", json={"old_plate": "KA01OL3333", "new_plate": "KA01TK4444"}
+    )
     assert resp.status_code == 409
 
 
 def test_transfer_same_plate_rejected(client):
     register_and_login(client)
-    client.post("/api/parking/check-in", json={"plate_number": "SAME1", "vehicle_type": "compact"})
-    resp = client.post("/api/parking/transfer", json={"old_plate": "SAME1", "new_plate": "same1"})
+    client.post("/api/parking/check-in", json={"plate_number": "KA01SM5555", "vehicle_type": "compact"})
+    resp = client.post(
+        "/api/parking/transfer", json={"old_plate": "KA01SM5555", "new_plate": "ka01sm5555"}
+    )
+    assert resp.status_code == 400
+
+
+def test_transfer_invalid_new_plate_format_rejected(client):
+    register_and_login(client)
+    client.post("/api/parking/check-in", json={"plate_number": "KA01VL6666", "vehicle_type": "compact"})
+    resp = client.post("/api/parking/transfer", json={"old_plate": "KA01VL6666", "new_plate": "NOTAPLATE"})
     assert resp.status_code == 400
