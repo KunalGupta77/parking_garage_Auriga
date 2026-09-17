@@ -1,16 +1,41 @@
 import math
 import os
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 from flask import Flask, jsonify, render_template, request, session
 from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from fees import calculate_fee
+from fees import ADDITIONAL_HOUR_RATE, DAILY_CAP, FIRST_HOUR_RATE, calculate_fee
 from models import ParkingSession, ParkingSpot, User, VEHICLE_TYPES, db, utcnow
+from rates import load_rate_card
 from seed import init_db
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+
+# Cleaned per-spot-type rate card (assessment twist T4 — see rates.py and
+# rate_card_raw.csv). A spot type missing from the imported card (or the
+# file being absent entirely) falls back to the flat default rates.
+DEFAULT_RATES = {
+    "first_hour": FIRST_HOUR_RATE,
+    "additional_hour": ADDITIONAL_HOUR_RATE,
+    "daily_cap": DAILY_CAP,
+}
+RATE_CARD_PATH = os.path.join(BASE_DIR, "rate_card_raw.csv")
+try:
+    RATE_CARD = load_rate_card(RATE_CARD_PATH)
+except FileNotFoundError:
+    RATE_CARD = {}
+
+
+def rates_for(spot_type):
+    return RATE_CARD.get(spot_type, DEFAULT_RATES)
+
+
+# A session parked longer than this is auto-closed by the nightly job
+# (assessment twist T2 — triggered via POST /clock rather than a real cron).
+AUTO_CLOSE_AFTER_HOURS = 24
 
 # Fallback order of spot types a vehicle may use, most-specific first.
 # EV vehicles must only ever use an EV spot. A compact car may fall back to
@@ -186,8 +211,15 @@ def register_routes(app):
         if active_session is None:
             return jsonify({"error": "No active parking session found for this vehicle"}), 404
 
+        type_rates = rates_for(active_session.spot.spot_type)
         active_session.check_out = utcnow()
-        active_session.fee = calculate_fee(active_session.check_in, active_session.check_out)
+        active_session.fee = calculate_fee(
+            active_session.check_in,
+            active_session.check_out,
+            type_rates["first_hour"],
+            type_rates["additional_hour"],
+            type_rates["daily_cap"],
+        )
         active_session.status = "completed"
         active_session.spot.is_occupied = False
         db.session.commit()
@@ -296,6 +328,86 @@ def register_routes(app):
                 "available_ev_spots": available_ev_spots,
             }
         ), 200
+
+    # ------------------------------------------------------- rate card (T4)
+    @app.get("/api/rates")
+    @login_required
+    def rates():
+        return jsonify({"rate_card": RATE_CARD, "default": DEFAULT_RATES}), 200
+
+    # ---------------------------------------------------- nightly job (T2)
+    @app.post("/clock")
+    def clock():
+        """Simulates the nightly auto-close job. Not tied to an attendant
+        session — it's meant to be triggered by a scheduler (or, for
+        grading, called directly), not by a logged-in human.
+
+        Accepts an optional {"now": "<ISO datetime>"} so a caller can
+        simulate the clock moving forward without a real 24-hour wait;
+        defaults to the real current time.
+        """
+        data = request.get_json(silent=True) or {}
+        now_raw = data.get("now")
+        if now_raw:
+            try:
+                as_of = datetime.fromisoformat(now_raw)
+            except ValueError:
+                return jsonify({"error": "now must be an ISO-8601 datetime"}), 400
+            if as_of.tzinfo is not None:
+                # The rest of the app stores naive UTC datetimes (see
+                # models.utcnow); normalize any offset-aware input to match.
+                as_of = as_of.astimezone(timezone.utc).replace(tzinfo=None)
+        else:
+            as_of = utcnow()
+
+        cutoff = as_of - timedelta(hours=AUTO_CLOSE_AFTER_HOURS)
+        stale_sessions = ParkingSession.query.filter(
+            ParkingSession.status == "active", ParkingSession.check_in <= cutoff
+        ).all()
+
+        closed = []
+        for s in stale_sessions:
+            type_rates = rates_for(s.spot.spot_type)
+            s.check_out = as_of
+            s.fee = calculate_fee(
+                s.check_in, s.check_out, type_rates["first_hour"], type_rates["additional_hour"], type_rates["daily_cap"]
+            )
+            s.status = "completed"
+            s.spot.is_occupied = False
+            closed.append(s)
+        db.session.commit()
+
+        return jsonify({"as_of": as_of.isoformat(), "closed_count": len(closed), "closed": [s.to_dict() for s in closed]}), 200
+
+    # --------------------------------------------------- valet hand-off (T6)
+    @app.post("/api/parking/transfer")
+    @login_required
+    def transfer():
+        """Transfers an open session to a different plate (valet hand-off).
+        The spot and the original entry time carry over unchanged — this
+        mutates the existing active session's plate rather than closing it
+        out and opening a new one, since it's the same continuous stay.
+        """
+        data = request.get_json(silent=True) or {}
+        old_plate = (data.get("old_plate") or "").strip().upper()
+        new_plate = (data.get("new_plate") or "").strip().upper()
+
+        if not old_plate or not new_plate:
+            return jsonify({"error": "old_plate and new_plate are required"}), 400
+        if old_plate == new_plate:
+            return jsonify({"error": "new_plate must differ from old_plate"}), 400
+
+        active_session = ParkingSession.query.filter_by(plate_number=old_plate, status="active").first()
+        if active_session is None:
+            return jsonify({"error": "No active parking session found for old_plate"}), 404
+
+        conflict = ParkingSession.query.filter_by(plate_number=new_plate, status="active").first()
+        if conflict is not None:
+            return jsonify({"error": "new_plate already has an active parking session"}), 409
+
+        active_session.plate_number = new_plate
+        db.session.commit()
+        return jsonify(active_session.to_dict()), 200
 
 
 app = create_app()
