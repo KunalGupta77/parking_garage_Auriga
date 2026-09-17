@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login — ParkFlow</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 min-h-screen flex items-center justify-center">
+  <div class="bg-white p-8 rounded-xl border border-slate-200 w-full max-w-md">
+    <h1 class="text-2xl font-bold mb-1">Attendant login</h1>
+    <p class="text-slate-500 text-sm mb-6">
+      No account yet? <a href="/register" class="text-indigo-600 hover:underline">Register</a>
+    </p>
+
+    <form id="login-form" class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium mb-1" for="email">Email</label>
+        <input id="email" name="email" type="email" required
+               class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1" for="password">Password</label>
+        <input id="password" name="password" type="password" required
+               class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+      </div>
+
+      <p id="error-message" class="text-red-600 text-sm hidden"></p>
+
+      <button type="submit"
+              class="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700">
+        Log in
+      </button>
+    </form>
+  </div>
+
+  <script src="/static/js/auth.js"></script>
+</body>
+</html>

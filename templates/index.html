@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ParkFlow — Smart Parking Management</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+  <header class="bg-white border-b border-slate-200">
+    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <span class="text-xl font-bold text-indigo-600">ParkFlow</span>
+      <nav class="space-x-4">
+        <a href="/login" class="text-slate-600 hover:text-indigo-600">Login</a>
+        <a href="/register" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">Get Started</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="max-w-6xl mx-auto px-6 py-16 text-center">
+    <h1 class="text-4xl md:text-5xl font-extrabold text-slate-900 mb-4">
+      Run your parking garage without the guesswork
+    </h1>
+    <p class="text-lg text-slate-600 max-w-2xl mx-auto mb-8">
+      ParkFlow is a check-in/check-out system for busy multi-level city-centre garages.
+      Attendants assign spots, track EV chargers, and calculate fees correctly — every time.
+    </p>
+    <a href="/register" class="inline-block bg-indigo-600 text-white px-6 py-3 rounded-lg text-lg hover:bg-indigo-700">
+      Create an account
+    </a>
+  </section>
+
+  <section class="max-w-6xl mx-auto px-6 py-12">
+    <h2 class="text-2xl font-bold text-center mb-10">Key Features</h2>
+    <div class="grid md:grid-cols-3 gap-6">
+      <div class="bg-white p-6 rounded-xl border border-slate-200">
+        <h3 class="font-semibold text-lg mb-2">Smart Spot Assignment</h3>
+        <p class="text-slate-600 text-sm">Every vehicle is matched to a compatible spot automatically — EVs only ever get an EV charger spot.</p>
+      </div>
+      <div class="bg-white p-6 rounded-xl border border-slate-200">
+        <h3 class="font-semibold text-lg mb-2">Accurate Tiered Billing</h3>
+        <p class="text-slate-600 text-sm">First-hour and additional-hour rates with a daily cap, calculated to the minute with no rounding errors.</p>
+      </div>
+      <div class="bg-white p-6 rounded-xl border border-slate-200">
+        <h3 class="font-semibold text-lg mb-2">Instant Plate Lookup</h3>
+        <p class="text-slate-600 text-sm">Search any license plate to see active status or full parking history in seconds.</p>
+      </div>
+      <div class="bg-white p-6 rounded-xl border border-slate-200">
+        <h3 class="font-semibold text-lg mb-2">Live EV Availability</h3>
+        <p class="text-slate-600 text-sm">See exactly how many EV charging spots are free before you send a driver looking for one.</p>
+      </div>
+      <div class="bg-white p-6 rounded-xl border border-slate-200">
+        <h3 class="font-semibold text-lg mb-2">Multi-Floor, Any Garage</h3>
+        <p class="text-slate-600 text-sm">Works for any number of floors and spot mix — not hardcoded to one garage's layout.</p>
+      </div>
+      <div class="bg-white p-6 rounded-xl border border-slate-200">
+        <h3 class="font-semibold text-lg mb-2">Searchable History</h3>
+        <p class="text-slate-600 text-sm">Full parking history with search, sorting, and pagination for busy, high-traffic days.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="max-w-4xl mx-auto px-6 py-12 text-center">
+    <h2 class="text-2xl font-bold mb-4">Built for</h2>
+    <p class="text-slate-600">
+      Parking attendants and facility operators running busy multi-level city-centre garages who need
+      a fast, reliable way to check vehicles in and out, avoid double-booked spots, and bill fairly.
+    </p>
+  </section>
+
+  <section class="max-w-4xl mx-auto px-6 py-12 text-center">
+    <h2 class="text-2xl font-bold mb-4">How It Helps</h2>
+    <p class="text-slate-600">
+      ParkFlow removes manual spot tracking and fee guesswork. Attendants get a single dashboard to check
+      vehicles in, find the right spot instantly, look up any plate, and check out with a fee that's always
+      calculated the same correct way — reducing disputes and idle spot time.
+    </p>
+  </section>
+
+  <section class="max-w-4xl mx-auto px-6 py-12">
+    <h2 class="text-2xl font-bold text-center mb-6">Coming Next</h2>
+    <ul class="grid md:grid-cols-3 gap-6 text-center">
+      <li class="bg-white p-5 rounded-xl border border-slate-200">
+        <p class="font-semibold mb-1">License Plate Recognition</p>
+        <p class="text-sm text-slate-600">Camera-based automatic check-in/out without manual plate entry.</p>
+      </li>
+      <li class="bg-white p-5 rounded-xl border border-slate-200">
+        <p class="font-semibold mb-1">Reserved / Monthly Passes</p>
+        <p class="text-sm text-slate-600">Subscription parking with pre-assigned spots for regular customers.</p>
+      </li>
+      <li class="bg-white p-5 rounded-xl border border-slate-200">
+        <p class="font-semibold mb-1">Online Payments</p>
+        <p class="text-sm text-slate-600">Card/UPI payment at checkout instead of cash-only settlement.</p>
+      </li>
+    </ul>
+  </section>
+
+  <footer class="text-center text-sm text-slate-400 py-8">
+    ParkFlow — Parking Management System
+  </footer>
+
+</body>
+</html>
